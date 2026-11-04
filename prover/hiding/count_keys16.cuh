@@ -42,35 +42,24 @@
 // https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/cpp-language-extensions.html;
 // the block-stride loop: shown in a listing on the page "Writing SIMT Kernels", cited above.
 __global__ void k_count_keys16(const uint4 *keys, size_t nvb, int bpi, u32 *outAll) {
-  extern __shared__ u32 bins[];
+  // sm_89 port (experiment): the 32768-bin shared histogram needs 128 KiB, above Ada's 99 KiB
+  // opt-in. Every key now adds straight to the global counters: the same sums, lower throughput.
   const int b = blockIdx.x / bpi, w = blockIdx.x % bpi;
   const uint4 *kb = keys + (size_t)b * nvb;
   u32 *out = outAll + ((size_t)b << 16);
-  for (u32 half = 0; half < 2; half++) {
-    for (int i = threadIdx.x; i < 32768; i += blockDim.x) bins[i] = 0;
-    __syncthreads();
-    for (size_t i = w * (size_t)blockDim.x + threadIdx.x; i < nvb; i += (size_t)bpi * blockDim.x) {
-      uint4 v = kb[i];
-      u32 x[4] = {v.x, v.y, v.z, v.w};
+  for (size_t i = w * (size_t)blockDim.x + threadIdx.x; i < nvb; i += (size_t)bpi * blockDim.x) {
+    uint4 v = kb[i];
+    u32 x[4] = {v.x, v.y, v.z, v.w};
 #pragma unroll
-      for (int a = 0; a < 8; a++) {
-        const u32 k = (x[a >> 1] >> (16 * (a & 1))) & 65535u;
-        if (k >> 15 == half) atomicAdd(&bins[k & 32767u], 1u);
-      }
+    for (int a = 0; a < 8; a++) {
+      const u32 k = (x[a >> 1] >> (16 * (a & 1))) & 65535u;
+      atomicAdd(&out[k], 1u);
     }
-    __syncthreads();
-    for (int c = threadIdx.x; c < 32768; c += blockDim.x) atomicAdd(&out[half * 32768u + c], bins[c]);
-    __syncthreads();
   }
 }
 // Launches k_count_keys16(); exits if the launch is rejected. `out`: the kernel's outAll; zero it
 // first. The 131072-byte limit is set at the first call only, for the device then current.
 static inline void count_keys16(const uint4 *keys, size_t nvb, int bpi, int identities, u32 *out, cudaStream_t stream) {
-  static const bool once = [] {
-    CK_ATTRIBUTE(k_count_keys16, cudaFuncAttributeMaxDynamicSharedMemorySize, 131072);
-    return true;
-  }();
-  (void)once;
-  k_count_keys16<<<identities * bpi, 1024, 131072, stream>>>(keys, nvb, bpi, out);
+  k_count_keys16<<<identities * bpi, 1024, 0, stream>>>(keys, nvb, bpi, out); // sm_89 port: no shared memory
   CK(cudaGetLastError());
 }

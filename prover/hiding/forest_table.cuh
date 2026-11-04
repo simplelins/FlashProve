@@ -478,7 +478,8 @@ struct ForestTable {
     PA(et.Gcb, (((nlo << (kT - 5)) >> 14) + 2) * 1024, 2);
     PA(et.X, 32ull << lmid, 2);
     et.solo = solo;
-    CK_ATTRIBUTE(h_idk<1>, cudaFuncAttributeMaxDynamicSharedMemorySize, 131072);
+    // sm_89 port (experiment): the 131072-byte attribute request failed on Ada; h_idk<1>
+    // is launched per call with 4<<k bytes, so its attribute is set per call in counts().
   }
   // prove() needs this many elements of T at `room`, 256-byte aligned. Level l starts at element
   // nlo (2^l - 1). Nothing there is needed between two calls.
@@ -498,8 +499,10 @@ struct ForestTable {
       count_keys16(kk, words, g_sms, 1, to, g_st);
     else if (k <= 10)
       h_idk<8><<<g_sms * 2, 512, (size_t)32 << k, g_st>>>(kk, words, g_sms * 2, k, to);
-    else
+    else {
+      CK_ATTRIBUTE(h_idk<1>, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)(4 << k)); // sm_89 port: per call, was 131072 at init
       h_idk<1><<<g_sms * 2, 512, (size_t)4 << k, g_st>>>(kk, words, g_sms * 2, k, to);
+    }
     CK(cudaGetLastError());
     if (pub)
       ft::k_pub_call<<<1, 1, 0, g_st>>>(to + calls[c].t0, pub, pubo + keys.first[c], I);

@@ -1396,9 +1396,9 @@ private:
     // A pitch of 4 words past a multiple of 32: eight rows' words meet no shared-memory bank twice.
     const u32 n = (u32)narrow_.size(), padded = (n + 7) / 8 * 8, pitch = (4 * padded + 127) / 128 * 128 + 16;
     const size_t room = fold_bytes_room(pitch, padded);
-    if (room > (size_t)100 << 10) return false; // (two blocks on a multiprocessor)
+    if (room > (size_t)98 << 10) return false; // sm_89 port (experiment): was 100<<10 (102,400 B > Ada's 101,376 B)
     static const bool set = [] {
-      ENGINE_CK_ATTRIBUTE(k_fold_combine_bytes, cudaFuncAttributeMaxDynamicSharedMemorySize, 100 << 10);
+      ENGINE_CK_ATTRIBUTE(k_fold_combine_bytes, cudaFuncAttributeMaxDynamicSharedMemorySize, 98 << 10);
       return true;
     }();
     (void)set;

@@ -95,7 +95,7 @@ constexpr unsigned TILED_THREADS = 256;
 constexpr unsigned TILED_M = 128, TILED_N = 128; // a block's planes, and its rows of columns' bytes
 constexpr unsigned TILED_COLUMNS = TILED_N / 8;
 constexpr unsigned TILED_STEP = 128;              // places copied to shared memory in one step
-constexpr unsigned TILED_STAGES = 3;
+constexpr unsigned TILED_STAGES = 2; // sm_89 port (experiment): was 3 (TILED_ROOM 108 KiB > Ada's 99 KiB)
 constexpr unsigned TILED_PARTS = TILED_STEP / 16; // 16-byte pieces of one row in a step
 constexpr unsigned TILED_PITCH = TILED_STEP + 16; // bytes from one row of a tile to the next
 constexpr unsigned TILED_STAGE_BYTES = (TILED_M + TILED_N) * TILED_PITCH;

@@ -698,7 +698,7 @@ struct RangeWindows {
   size_t jobs() const { return jobs_.size(); }
 
 private:
-  static constexpr int COUNT_BITS = 15; // the counting kernel's bins: 2^15 words, 128 KiB of shared memory
+  static constexpr int COUNT_BITS = 13; // sm_89 port (experiment): was 15 (128 KiB > Ada's 99 KiB opt-in); 4<<13 = 32 KiB
   static constexpr size_t NO_UNIT = ~(size_t)0, NOT_COVERED = ~(size_t)0 - 1;
   struct Unit {
     ::hfw::FoldUnit u;  // index rules; each `step` is for the model file's order

@@ -221,7 +221,8 @@ __global__ void k_cat(const T *a, int na, const T *b, int nb, T *o) {
 template <int NL, int LANES>
 __global__ void __launch_bounds__(32 * LANES) k_ws(const long long *xst, int T_, int d, long long *Ws) {
   constexpr int NS = 2 * NL - 1; // the number of sums: one for each s = a + c
-  __shared__ long long sh[NS][LANES][33];
+  extern __shared__ long long sh_dyn[]; // sm_89 port (experiment): was static sh[NS][LANES][33]
+  long long (*sh)[LANES][33] = reinterpret_cast<long long (*)[LANES][33]>(sh_dyn);
   const int tx = threadIdx.x, ty = threadIdx.y, t = blockIdx.x * 32 + tx, i = blockIdx.y;
   const long long *x = xst + (size_t)i * d * T_;
   long long W[NS] = {};
@@ -272,10 +273,16 @@ __global__ void k_absmost(const long long *x, size_t n, unsigned long long *most
 }
 // Launches k_ws for NI norm instances whose values have xl = 5 limbs; any other xl is taken as 4.
 static inline void ws_of(int xl, const long long *xst, int T_, int d, int NI, long long *Ws) {
-  if (xl == 5)
-    k_ws<5, 16><<<dim3((T_ + 31) / 32, NI), dim3(32, 16)>>>(xst, T_, d, Ws);
-  else
-    k_ws<4, 32><<<dim3((T_ + 31) / 32, NI), dim3(32, 32)>>>(xst, T_, d, Ws);
+  // sm_89 port (experiment): dynamic shared memory; Ada opt-in limit is 99 KiB, both shapes fit.
+  if (xl == 5) {
+    constexpr int sh_bytes5 = (2 * 5 - 1) * 16 * 33 * int(sizeof(long long));
+    CK(cudaFuncSetAttribute(k_ws<5, 16>, cudaFuncAttributeMaxDynamicSharedMemorySize, sh_bytes5));
+    k_ws<5, 16><<<dim3((T_ + 31) / 32, NI), dim3(32, 16), sh_bytes5>>>(xst, T_, d, Ws);
+  } else {
+    constexpr int sh_bytes4 = (2 * 4 - 1) * 4 * 33 * int(sizeof(long long));
+    CK(cudaFuncSetAttribute(k_ws<4, 32>, cudaFuncAttributeMaxDynamicSharedMemorySize, sh_bytes4));
+    k_ws<4, 32><<<dim3((T_ + 31) / 32, NI), dim3(32, 32), sh_bytes4>>>(xst, T_, d, Ws);
+  }
 }
 // o[q] = sum_t e[t] * fn(q, t), masked. o must point into the sub-proof's message array: what is
 // stored is the sum plus the mask entry of the slot o + q, a random element (sc_door::claim(),
