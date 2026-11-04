@@ -122,6 +122,10 @@ struct Borrowed {
 // its integer tensor-core kernels accept only the TN form, with m and k divisible by 4.
 static inline void gemm_tn(cublasHandle_t handle, int m, int n, int k, const int8_t *A, size_t lda, const int8_t *B,
                            size_t ldb, int *C, size_t ldc, bool add, int times = 1) {
+  // sm_89 port (experiment): cuBLAS returns INVALID_VALUE for a GEMM with a zero dimension; a
+  // zero-size product writes nothing, so returning here is the same result (hit on a small kit's
+  // empty column block, which the released H100 runs never reach).
+  if (m <= 0 || n <= 0 || k <= 0) return;
   const int beta = add ? 1 : 0;
   const cublasStatus_t status =
       cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N, m, n, k, &times, A, CUDA_R_8I, (int)lda, B, CUDA_R_8I, (int)ldb,
