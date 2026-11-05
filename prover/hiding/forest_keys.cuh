@@ -281,7 +281,10 @@ template <> struct Form<LimbSrc> : ByValues<Form<LimbSrc>> {
 // and lookup_tie::k_tie() raises OWN_TEST (no proof). Same for a range table of under 2^16 rows.
 template <> struct Form<PackedSrc> : ByValues<Form<PackedSrc>> {
   static constexpr int THREADS = 512;
-  static __host__ __device__ int shared(const PackedSrc &) { return POWERS_BYTES + 131072; }
+  // sm_89 port (experiment): the packed table is no longer staged into shared memory (its
+  // 131,072 bytes plus the powers would exceed Ada's 99 KiB opt-in); the keys read it from
+  // global memory through s.ctab. The shared block keeps only the alpha powers.
+  static __host__ __device__ int shared(const PackedSrc &) { return POWERS_BYTES; }
   const uint16_t *tab;
   __device__ __forceinline__ void init(const PackedSrc &s, const T &alpha, void *sh) {
     set_powers(alpha, sh);
@@ -289,8 +292,8 @@ template <> struct Form<PackedSrc> : ByValues<Form<PackedSrc>> {
   }
   static constexpr int BITS = 44, NB0 = 4;
   __device__ __forceinline__ void init_values(const PackedSrc &s, void *sh) {
-    tab = (const uint16_t *)((u8 *)sh + POWERS_BYTES);
-    stage((u8 *)sh + POWERS_BYTES, s.ctab, 131072);
+    (void)sh;
+    tab = s.ctab;
   }
   __device__ __forceinline__ u64 value(u32 k) const { return (u64)k + ((u64)tab[k] << 28); }
   __device__ __forceinline__ u64 bytes0(u32 k) const { return k | (u32)tab[k] << 16; }
