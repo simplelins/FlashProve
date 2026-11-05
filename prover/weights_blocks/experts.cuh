@@ -48,7 +48,7 @@
 // alone. Both forms are meant to give the same sums.
 // Three tests that are not part of this repository compare the sums with a plain kernel's: two
 // test the selected form, and one tests both forms (it builds only at 1).
-#define EXPERTS_IN_ONE_LAUNCH 1
+#define EXPERTS_IN_ONE_LAUNCH 0 // sm_89 port (experiment): the one-launch kernel's Tile4::SMEM is at least 130.5 KiB, above Ada's 99 KiB opt-in; the host loop computes the same sums through cuBLAS
 #if EXPERTS_IN_ONE_LAUNCH
 #include "weights_blocks/experts_in_one_launch.cuh"
 #endif
