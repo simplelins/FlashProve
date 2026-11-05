@@ -130,22 +130,28 @@ static inline void gemm_tn(cublasHandle_t handle, int m, int n, int k, const int
   cublasStatus_t status =
       cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N, m, n, k, &times, A, CUDA_R_8I, (int)lda, B, CUDA_R_8I, (int)ldb,
                    &beta, C, CUDA_R_32I, (int)ldc, CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
-  // sm_89 port (experiment): on Ada, cuBLAS rejects int8 IMMA with n > 16 when m is not a
-  // multiple of 16 (a shape that the released full-size configuration never produces). The call
-  // is retried with m split into a multiple of 16 and a tail: the two calls write disjoint rows
-  // of C, so the beta semantics of the whole call are kept. Probe results (sm_89, cuBLAS
-  // 13.2.2.2): m 8/16/400/416 with n 32 and k 16 all succeed; m 408 with n 17 and above fails.
-  if (status != CUBLAS_STATUS_SUCCESS) {
-    const int m_main = m & ~15, m_rest = m - m_main;
-    status = CUBLAS_STATUS_SUCCESS;
-    if (m_main > 0)
-      status = cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N, m_main, n, k, &times, A, CUDA_R_8I, (int)lda,
-                            B, CUDA_R_8I, (int)ldb, &beta, C, CUDA_R_32I, (int)ldc, CUBLAS_COMPUTE_32I,
-                            CUBLAS_GEMM_DEFAULT);
-    if (status == CUBLAS_STATUS_SUCCESS && m_rest > 0)
-      status = cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N, m_rest, n, k, &times, A + (size_t)m_main * lda,
-                            CUDA_R_8I, (int)lda, B, CUDA_R_8I, (int)ldb, &beta, C + m_main, CUDA_R_32I, (int)ldc,
-                            CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+  // sm_89 port (experiment): on Ada, cuBLAS rejects int8 IMMA unless the output layout is
+  // unpadded (ldc == m) and m is a multiple of 16 (probes: m400/ldc408 -> 15, m408/ldc416 -> 15,
+  // m400/ldc400 -> 0, m408 n2048/ldc408 -> 15). A caller whose C has ldc == m but m % 16 != 0
+  // (the small kit's width of 408; the released full-size width is a multiple of 16) cannot be
+  // served by any argument rearrangement, so the product is computed into an aligned scratch
+  // (A padded with zero rows to mp = m rounded up to 16, ldc = mp) and copied back row by row.
+  // beta is applied inside the scratch by the single GemmEx that writes it; the copy-back moves
+  // whole rows, so the caller's C holds exactly the same sums.
+  if (status != CUBLAS_STATUS_SUCCESS && ldc == (size_t)m && (m & 15)) {
+    const int mp = (m + 15) & ~15;
+    int8_t *sA; int *sC;
+    if (cudaMalloc(&sA, (size_t)mp * k) != cudaSuccess || cudaMalloc(&sC, (size_t)mp * n * 4) != cudaSuccess) {
+      cudaFree(sA), cudaFree(sC);
+      printf("GPU error: the int8 scratch for the misaligned GEMM could not be allocated; the program stops\n");
+      exit(1);
+    }
+    cudaMemcpyAsync(sA, A, (size_t)m * k, cudaMemcpyDeviceToDevice, 0), cudaMemsetAsync(sA + (size_t)m * k, 0, (size_t)(mp - m) * k, 0);
+    status = cublasGemmEx(handle, CUBLAS_OP_T, CUBLAS_OP_N, mp, n, k, &times, sA, CUDA_R_8I, k, B, CUDA_R_8I,
+                          (int)ldb, &beta, sC, CUDA_R_32I, mp, CUBLAS_COMPUTE_32I, CUBLAS_GEMM_DEFAULT);
+    if (status == CUBLAS_STATUS_SUCCESS)
+      cudaMemcpy2DAsync(C, ldc * 4, sC, mp * 4, m * 4, n, cudaMemcpyDeviceToDevice, 0);
+    cudaFree(sA), cudaFree(sC);
   }
   if (status != CUBLAS_STATUS_SUCCESS) {
     // n is not printed: in the routed experts' product (grouped_blocks() in
