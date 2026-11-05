@@ -774,11 +774,11 @@ __global__ void k_epi_router(const int *C0, const int *C1, const int *C2, int T,
     if (rc.on ? (w >> 3) < -32768 || (w >> 3) > 32639 : w < -16384 || w > 16383) {
       atomicOr(err, (u32)E_LR);
 #ifndef SERVING_BUILD
-      // sm_89 port (experiment): print the first out-of-range router logit and its inputs, to
-      // tell a miscomputed accumulator (a wild value) from a worst-case bound that does not hold.
-      if (atomicExch(err + 1, i + 1) == 0 && err + 1 != nullptr)
-        printf("E_LR diag: i %zu (token %zu expert %zu) w %lld C0 %d C1 %d C2 %d k %d\n", (size_t)i,
-               (size_t)(i % T), (size_t)(i / T), (long long)w, C0[i], C1[i], C2[i], k);
+      // sm_89 port (experiment): print the first out-of-range router logits, to tell a
+      // miscomputed accumulator (a wild value) from a worst-case bound that does not hold.
+      if (i < 8)
+        printf("E_LR diag: i %zu (expert %zu token %zu) w %lld C0 %d C1 %d C2 %d k %d\n", (size_t)i,
+               (size_t)(i / T), (size_t)(i % T), (long long)w, C0[i], C1[i], C2[i], k);
 #endif
       w = 0;
     }
