@@ -776,9 +776,8 @@ __global__ void k_epi_router(const int *C0, const int *C1, const int *C2, int T,
 #ifndef SERVING_BUILD
       // sm_89 port (experiment): print the first out-of-range router logits, to tell a
       // miscomputed accumulator (a wild value) from a worst-case bound that does not hold.
-      if (i < 8)
-        printf("E_LR diag: i %zu (expert %zu token %zu) w %lld C0 %d C1 %d C2 %d k %d\n", (size_t)i,
-               (size_t)(i / T), (size_t)(i % T), (long long)w, C0[i], C1[i], C2[i], k);
+      printf("E_LR diag: i %zu (expert %zu token %zu) w %lld C0 %d C1 %d C2 %d k %d\n", (size_t)i,
+             (size_t)(i / T), (size_t)(i % T), (long long)w, C0[i], C1[i], C2[i], k);
 #endif
       w = 0;
     }
