@@ -510,7 +510,16 @@ __global__ void k_head_margins(const int *C0, const int *C1, const int *C2, int 
     const bool stated = t >= r && t < e;
     i64 D = lie::at(lie::MARGIN, v, t, chosen[t] + lift[t] - head_logit(C0, C1, C2, i) - (v < win[t] ? 1 : 0) - head_public_term(t, v));
     if (D < 0 || D >= reach) {
-      if (stated && !lie::pass(lie::HEAD_MARGIN)) atomicOr(err, (u32)E_LR);
+      if (stated && !lie::pass(lie::HEAD_MARGIN)) {
+        atomicOr(err, (u32)E_LR);
+#ifndef SERVING_BUILD
+        // sm_89 port (experiment): print the first few wrong margins with the values behind
+        // them, to tell a slightly wrong logit from a wildly wrong one.
+        if (i < 4)
+          printf("HEAD_MARGIN diag: i %zu v %d t %d D %lld chosen %lld lift %lld win[t] %d\n", (size_t)i, v, t,
+                 (long long)D, (long long)chosen[t], (long long)lift[t], win[t]);
+#endif
+      }
       D = 0;
     }
     int K0, K1, K2;
