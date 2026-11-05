@@ -151,9 +151,9 @@ static inline void gemm_tn(cublasHandle_t handle, int m, int n, int k, const int
     // n is not printed: in the routed experts' product (grouped_blocks() in
     // prover/weights_blocks/experts.cuh) it depends on the number of tokens routed to an expert,
     // and so on the weights and the prompts.
-    printf("GPU error: the cuBLAS int8 matrix multiply failed with status %d (m %d k %d lda %zu ldb %zu ldc %zu); the "
+    printf("GPU error: the cuBLAS int8 matrix multiply failed with status %d (m %d n %d k %d lda %zu ldb %zu ldc %zu); the "
            "program stops\n",
-           (int)status, m, k, lda, ldb, ldc);
+           (int)status, m, n, k, lda, ldb, ldc);
     exit(1);
   }
 }
