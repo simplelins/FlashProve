@@ -175,6 +175,7 @@
 //   https://developer.nvidia.com/blog/boosting-application-performance-with-gpu-memory-prefetching/
 #pragma once
 #include <cublasLt.h>
+#include "common/blas.h" // sm_89 port: the fallback path
 #include <map>
 #include <mutex>
 #include <tuple>
@@ -370,6 +371,7 @@ struct Plan {
   cublasLtMatmulDesc_t op;
   cublasLtMatrixLayout_t a, b, c;
   cublasLtMatmulAlgo_t algo;
+  bool fallback = false; // sm_89 port: this shape goes through blas::gemm_tn
 };
 // The cuBLASLt handle, which set_up() creates, and the plans. Each translation unit that includes
 // this file has its own copy. Public source: [cuBLAS].
@@ -400,6 +402,16 @@ static Lib g_lib;
 // Public source: [cuBLAS] ('TN' format, alignment, strided batch; cublasLtMatmulHeuristicResult_t,
 // workspaceSize; cublasLtMatmulAlgoGetHeuristic(), fastest estimate first; 256 by default:
 // cublasLtMatmulPreferenceAttributes_t, CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_A_BYTES, _B_, _C_, _D_).
+// sm_89 port (experiment): the same product through blas::gemm_tn, which retries in 16-column
+// blocks on Ada. The thread's cuBLAS handle is borrowed with no workspace set, so the caller's
+// setting is restored on return; cuBLAS then uses its own default workspace.
+static inline void product_by_gemm_tn(const i8 *A, const i8 *B, int *C, int m, int n, int k, int batch, size_t ld,
+                                      size_t step, cudaStream_t st) {
+  blas::Borrowed brd(st, nullptr, 0);
+  for (int i = 0; i < batch; i++)
+    blas::gemm_tn(brd.handle, m, n, k, A + (size_t)i * step, ld, B + (size_t)i * step, ld,
+                  C + (size_t)i * m * n, m, false);
+}
 // The callers pass both sides' stacked digits as A and B: see [Multiword], at the top of this file.
 static inline void product(const i8 *A, const i8 *B, int *C, int m, int n, int k, int batch, size_t ld, size_t step,
                            cudaStream_t st) {
@@ -435,14 +447,25 @@ static inline void product(const i8 *A, const i8 *B, int *C, int m, int n, int k
           cublasLtMatmulAlgoGetHeuristic(g_lib.h, p.op, p.a, p.b, p.c, p.c, pref, 1, &first, &got);
       LT_CK(cublasLtMatmulPreferenceDestroy(pref));
       if (found != CUBLAS_STATUS_SUCCESS || got < 1 || first.state != CUBLAS_STATUS_SUCCESS || first.workspaceSize) {
-        printf("cublasLt has no algorithm for signed bytes at m %d n %d k %d batch %d ld %zu\n", m, n, k, batch, ld);
+        // sm_89 port (experiment): on Ada the zero-workspace heuristic refuses some int8 shapes
+        // (the probe returned status 15 with found 0). The same exact product is computed
+        // through blas::gemm_tn instead, which retries in 16-column blocks; it needs no preset
+        // algorithm. The library is still given no workspace of its own.
+        printf("cublasLt has no algorithm for signed bytes at m %d n %d k %d batch %d ld %zu; using gemm_tn\n", m, n, k, batch, ld);
         fflush(stdout);
-        exit(1);
+        p.fallback = true;
+        g_lib.plans.emplace(key, p);
+        product_by_gemm_tn(A, B, C, m, n, k, batch, ld, step, st);
+        return;
       }
       p.algo = first.algo;
       it = g_lib.plans.emplace(key, p).first;
     }
     pl = &it->second;
+    if (pl->fallback) { // sm_89 port: this shape has no zero-workspace cublasLt algorithm here
+      product_by_gemm_tn(A, B, C, m, n, k, batch, ld, step, st);
+      return;
+    }
   }
   const int one = 1, zero = 0;
   LT_CK(

@@ -614,7 +614,7 @@ tools() {
   file_of device-compiler "$middle/cicc" || return 1
   file_of device-assembler "$(PATH=$looks command -v ptxas)"
 }
-nvcc_base=(nvcc -O3 -std=c++17 -arch=${FP_ARCH:-sm_90a} --extended-lambda --default-stream per-thread -I. -Xcompiler -fno-ipa-modref -DCCCL_DISABLE_NVTX -DDIGEST_WORDS=$dw)
+nvcc_base=(nvcc -O3 -std=c++17 -arch=${FP_ARCH:-sm_90a} --extended-lambda --default-stream per-thread -I. -Xcompiler -fno-ipa-modref -DCCCL_DISABLE_NVTX -DDIGEST_WORDS=$dw -DFOREST_FUSED=0)
 # -fno-ipa-modref, for the host compiler here and in the g++ lines below, works around a bug in g++
 # 13.3.0, which can silently delete the stores that fill an object passed by reference
 # (verifier/tests/compiler_pass_control.sh reproduces it). cuBLASLt is for
