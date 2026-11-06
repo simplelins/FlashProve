@@ -267,7 +267,7 @@ elif [[ $kind == host ]]; then
   g++ -O2 -fno-ipa-modref -std=c++17 -DDIGEST_WORDS=$dw -DBLK_FIELD=$field ${counting[@]+"${counting[@]}"} -Wall -Wextra -pthread -msha -msse4.1 -mssse3 -I. -I../blocks -o "$out/$t" "$source" \
     >"$out/$t.build.log" 2>&1
 else
-  nvcc -O3 -std=c++17 -arch=sm_90a --extended-lambda --default-stream per-thread -Xcompiler -pthread,-fno-ipa-modref -I. -I../blocks -DDIGEST_WORDS=$dw -DBLK_FIELD=$field \
+  nvcc -O3 -std=c++17 -arch=${FP_ARCH:-sm_90a} --extended-lambda --default-stream per-thread -Xcompiler -pthread,-fno-ipa-modref -I. -I../blocks -DDIGEST_WORDS=$dw -DBLK_FIELD=$field \
     ${counting[@]+"${counting[@]}"} -o "$out/$t" "$source" -lcublas -lcublasLt -lcuda >"$out/$t.build.log" 2>&1
 fi
 # shellcheck disable=SC2181 # $? is the status of the branch that ran
