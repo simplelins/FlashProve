@@ -415,6 +415,13 @@ static inline void product_by_gemm_tn(const i8 *A, const i8 *B, int *C, int m, i
 // The callers pass both sides' stacked digits as A and B: see [Multiword], at the top of this file.
 static inline void product(const i8 *A, const i8 *B, int *C, int m, int n, int k, int batch, size_t ld, size_t step,
                            cudaStream_t st) {
+  // sm_89 port (experiment): Ada's cublasLt, with the zero-workspace algorithms this caller
+  // requires, silently miscomputes rare elements of a strided batch (3 of 98,304 in one probe
+  // at m 192 n 128 k 512 batch 4), so the whole cublasLt path is bypassed and the same exact
+  // product is computed through blas::gemm_tn (cublasGemmEx, with an aligned scratch where the
+  // output layout is rejected). The plans below are left unused.
+  product_by_gemm_tn(A, B, C, m, n, k, batch, ld, step, st);
+  return;
   const Plan *pl;
   {
     std::lock_guard<std::mutex> l(g_lib.m);
