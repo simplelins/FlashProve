@@ -127,6 +127,17 @@ __global__ void k_tie(Tr *tr, const T *Z, const T *G, const T *a, T *slots) {
     // In a malicious-prover test build that is not part of this repository, a run can ignore the
     // failure, so that a verifier gets the proof (prover/common/lie.cuh). There lie::pass() records
     // its argument, this check's name, so it is called only on a failure; here it returns false.
+#ifndef SERVING_BUILD
+    // sm_89 port (experiment): print the failing tie identity's values, to locate which forest
+    // output disagrees with its algebraic self-check.
+    if (!(F::eq(Z[0], F::mul(a[0], P[0])) || lie::pass(lie::LOOKUP_TIE))) {
+      const K3 aa = F::mul(a[0], P[0]);
+      printf("LOOKUP_TIE diag: Z[0] != a[0]*P[0]\n");
+      for (int q = 0; q < 3; q++)
+        printf("  q%d: Z %016llx aP %016llx a %016llx P %016llx\n", q, (unsigned long long)Z[0].q[q],
+               (unsigned long long)aa.q[q], (unsigned long long)a[0].q[q], (unsigned long long)P[0].q[q]);
+    }
+#endif
     raise_flags(F::eq(Z[0], F::mul(a[0], P[0])) || lie::pass(lie::LOOKUP_TIE) ? 0u : (unsigned)OWN_TEST);
   }
   __syncwarp();
