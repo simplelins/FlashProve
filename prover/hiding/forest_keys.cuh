@@ -294,6 +294,14 @@ template <> struct Form<PackedSrc> : ByValues<Form<PackedSrc>> {
   __device__ __forceinline__ void init_values(const PackedSrc &s, void *sh) {
     (void)sh;
     tab = s.ctab;
+#ifndef SERVING_BUILD
+    // sm_89 port (experiment): print the packed table's pointers and first entries once, to
+    // check that the global read sees the same table the host staged.
+    if (blockIdx.x == 0 && threadIdx.x == 0)
+      printf("PACKED diag: tab %p ctab %p tab[0..3] %u %u %u %u (expect 0 0 0 0 for tau=k)\n",
+             (const void *)tab, (const void *)s.ctab, (unsigned)tab[0], (unsigned)tab[1],
+             (unsigned)tab[2], (unsigned)tab[3]);
+#endif
   }
   __device__ __forceinline__ u64 value(u32 k) const { return (u64)k + ((u64)tab[k] << 28); }
   __device__ __forceinline__ u64 bytes0(u32 k) const { return k | (u32)tab[k] << 16; }
