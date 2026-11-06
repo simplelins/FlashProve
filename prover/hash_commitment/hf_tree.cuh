@@ -486,11 +486,28 @@ static inline int show_columns(const hf_key32 *key, const uint8_t *key_again, co
   int bad = OWN_GOOD;
   std::vector<u64> taken =
       fibres_taken(key, key_again, I, columns, fib, R, ln, s, tags, room, room_bytes, st, bad, first_portion);
+  int diag_left = 4; // sm_89 port (experiment): print the first few mismatching fibres in detail
   for (int a = columns - 1; a >= 0; a--)
     if (!fibre_top_is_kept(&taken[a * longs], R, ln, s, I[a], heap) && !commit_lie::passes("own-node") && // hook for a malicious committer's test build: false in this repository
         !lie::passes_in_another_unit("own-node")) {                                                      // the same for a malicious prover's
       if (bad == OWN_GOOD) bad = OWN_NODE; // a failed salt check keeps its code: see above
       if (which) *which = a;
+#ifndef SERVING_BUILD
+      if (diag_left > 0) {
+        diag_left--;
+        const u64 *top = taken.data() + (size_t)a * longs + R + HF_SALT_SYMBOLS + (size_t)s * TDL;
+        const u32 *kept = heap + kept_at(ln, s, I[a] >> s) * DW;
+        printf("hc-own-node diag: fibre %d (I %llu) top[0..3] %016llx %016llx %016llx %016llx | kept %08x %08x %08x %08x\n",
+               a, (unsigned long long)I[a], (unsigned long long)top[0], (unsigned long long)top[1],
+               (unsigned long long)top[2], (unsigned long long)top[3], kept[0], kept[1], kept[2], kept[3]);
+        int dwords = 0;
+        for (int w = 0; w < TDL && dwords < 4; w++) {
+          const u64 t = taken[(size_t)a * longs + R + HF_SALT_SYMBOLS + (size_t)s * TDL + w];
+          const u64 k = kept[2 * w] | (u64)kept[2 * w + 1] << 32;
+          if (t != k) { printf("   first differing top word %d: remade %016llx kept %016llx\n", w, (unsigned long long)t, (unsigned long long)k); dwords++; }
+        }
+      }
+#endif
     }
   CK(cudaMemsetAsync(room, 0, show_room_bytes(columns, R, s), st));
   if (!bad)
