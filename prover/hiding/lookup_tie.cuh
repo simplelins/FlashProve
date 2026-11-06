@@ -133,9 +133,11 @@ __global__ void k_tie(Tr *tr, const T *Z, const T *G, const T *a, T *slots) {
     if (!(F::eq(Z[0], F::mul(a[0], P[0])) || lie::pass(lie::LOOKUP_TIE))) {
       const K3 aa = F::mul(a[0], P[0]);
       printf("LOOKUP_TIE diag: Z[0] != a[0]*P[0]\n");
-      for (int q = 0; q < 3; q++)
-        printf("  q%d: Z %016llx aP %016llx a %016llx P %016llx\n", q, (unsigned long long)Z[0].q[q],
-               (unsigned long long)aa.q[q], (unsigned long long)a[0].q[q], (unsigned long long)P[0].q[q]);
+      printf("  Z   = %016llx %016llx %016llx\n  a*P = %016llx %016llx %016llx\n  a   = %016llx %016llx %016llx\n  P   = %016llx %016llx %016llx\n",
+             (unsigned long long)Z[0].k0, (unsigned long long)Z[0].k1, (unsigned long long)Z[0].k2,
+             (unsigned long long)aa.k0, (unsigned long long)aa.k1, (unsigned long long)aa.k2,
+             (unsigned long long)a[0].k0, (unsigned long long)a[0].k1, (unsigned long long)a[0].k2,
+             (unsigned long long)P[0].k0, (unsigned long long)P[0].k1, (unsigned long long)P[0].k2);
     }
 #endif
     raise_flags(F::eq(Z[0], F::mul(a[0], P[0])) || lie::pass(lie::LOOKUP_TIE) ? 0u : (unsigned)OWN_TEST);
