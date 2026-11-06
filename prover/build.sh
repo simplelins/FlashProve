@@ -863,11 +863,11 @@ case "${1:-}" in
   # verifier/tests/forest_lookup_check.cpp.
   forest_lookup_test)
     "${nvcc_base[@]}" "${form[@]}" "${sha[@]}" -I../blocks -o "$work/forest_lookup_test" tests/forest_lookup_test.cu \
-      -lcuda -lcublasLt -ldl
+      -lcuda -lcublasLt -lcublas -ldl
     ;;
   # Benchmark: the time of a group's whole lookup on the GPU.
   forest_lookup_bench)
-    "${nvcc_base[@]}" "${form[@]}" "${sha[@]}" -I../blocks -o "$work/forest_lookup_bench" tests/forest_lookup_bench.cu -lcuda -lcublasLt -ldl
+    "${nvcc_base[@]}" "${form[@]}" "${sha[@]}" -I../blocks -o "$work/forest_lookup_bench" tests/forest_lookup_bench.cu -lcuda -lcublasLt -lcublas -ldl
     ;;
   # The program of the compiler check above, installed so that the test table can run it on a GPU
   # (SUITE.md, gpu.compiler_sample).
