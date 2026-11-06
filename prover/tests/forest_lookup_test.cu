@@ -184,7 +184,12 @@ int main(int argc, char **argv) {
       const CallShape &s = g.calls[c];
       list[c].n = s.n, list[c].k = s.k, list[c].fn = s.written ? 1 : 0, list[c].t0 = s.t0;
       if (s.written) {
-        for (u64 t = 0; t < 1ull << s.k; t++) tau[c].push_back(mix64(1000 * gi + 10 * c + (t << 8)) >> 5); // below 2^59
+        // sm_89 port (experiment): every fourth written group uses tau(j) = j, which make_table()
+        // classifies as PACKED — the one kind that the sm_89 patch changes (global reads instead
+        // of a shared-memory staging), previously untested by this test.
+        const bool packed_kind = (gi % 4) == 3;
+        for (u64 t = 0; t < 1ull << s.k; t++)
+          tau[c].push_back(packed_kind ? t : mix64(1000 * gi + 10 * c + (t << 8)) >> 5); // below 2^59
         u64 *d;
         CK(cudaMalloc(&d, 8 << s.k));
         CK(cudaMemcpy(d, tau[c].data(), 8 << s.k, cudaMemcpyHostToDevice));
