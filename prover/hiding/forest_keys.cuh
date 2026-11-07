@@ -294,6 +294,11 @@ template <> struct Form<PackedSrc> : ByValues<Form<PackedSrc>> {
   __device__ __forceinline__ void init_values(const PackedSrc &s, void *sh) {
     (void)sh;
     tab = s.ctab;
+    // sm_89 port (experiment): the original path staged the table with stage(), whose built-in
+    // __syncthreads() also made thread 0's set_powers() visible to every thread. With the staging
+    // gone, that barrier must be kept explicitly (k_digits_poly's BYTE_FORM reads the powers
+    // right after init, with no barrier of its own).
+    __syncthreads();
 #ifndef SERVING_BUILD
     // sm_89 port (experiment): print the packed table's pointers and first entries once, to
     // check that the global read sees the same table the host staged.
