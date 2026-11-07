@@ -18,6 +18,19 @@
 
 **待回填**：内核级耗时表（哈希/sumcheck/查表/GEMM/内存 五类占比）→ 决定 ASIC 面积分配。
 
+**第一份实测分解（2026-11-07，小 kit test build，免去插桩——日志自带 phase 计时）**：
+```
+cp_commit（总 11.6 s）：
+  key-file        6.9 s  (59%)  ← RS 编码 + Merkle 树 + 哈希（哈希主导实锤）
+  leaf-0-entry    1.6 s  (14%)  ← leaf 表 + link proof
+  anchor-table     0.7 s + anchor-judge 0.7 s + anchor-files 0.1 s + check 0.3 s
+cp_prove（单请求，test build，总 ~2 s set-up + ~1 s prove）：
+  keepers 0.1 s → weights read+pinned 0.47 s → set-up 0.47 s → prove+verify 0.96 s
+  （小 kit 证明本身很快；全尺寸的 sumcheck 随 T=1024、48 层暴涨——占比将移向 sumcheck）
+```
+⇒ **FPGA 批次 A（BLAKE2b 树构建器）直接命中 commit 的 59%**——优先级定案。
+nsys 注入失败的替代路径已不需要：**test build 日志自带 phase 计时**。
+
 **M0 实测记录（2026-11-07）**：
 - `cp_verify -plan accounting target_full_f2 128`：**67,383 轮 / 62,421 带验证者消息**；
   PoW 三档 20/28/32 bit；68 轮距目标 <0.01 bit（25 smallness + 43 closeness）；
