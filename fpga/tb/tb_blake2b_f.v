@@ -43,13 +43,12 @@ module tb;
       start = 1; cycle = 0;
       @(posedge clk); start = 0;
       if (vec == 0 && $test$plusargs("substeps")) begin
-        for (i = 0; i < 24; i = i + 1) begin
+        for (i = 0; i < 96; i = i + 1) begin
           @(posedge clk); #1;
-          $display("RTLSUB %0d: %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h ja=%0d jb=%0d jc=%0d jd=%0d cnt=%0d phase=%0d",
-                   i, dut.v[0], dut.v[1], dut.v[2], dut.v[3],
+          $display("S%03d cnt=%0d %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h",
+                   i, dut.cnt, dut.v[0], dut.v[1], dut.v[2], dut.v[3],
                    dut.v[4], dut.v[5], dut.v[6], dut.v[7], dut.v[8], dut.v[9],
-                   dut.v[10], dut.v[11], dut.v[12], dut.v[13], dut.v[14], dut.v[15],
-                   dut.ja, dut.jb, dut.jc, dut.jd, dut.cnt, dut.phase);
+                   dut.v[10], dut.v[11], dut.v[12], dut.v[13], dut.v[14], dut.v[15]);
         end
       end else
       while (!done && cycle < 200) begin @(posedge clk); cycle = cycle + 1; end

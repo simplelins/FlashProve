@@ -67,6 +67,7 @@ module blake2b_f (
   reg [63:0] v [0:15];
   reg [6:0]  cnt;
   reg        phase;
+  reg        do_xor;
 
   integer i;
 
@@ -98,10 +99,19 @@ module blake2b_f (
   wire [63:0] gd2 = rotr64_w(gd ^ ga2, 16);
   wire [63:0] gc2 = gc + gd2;
   wire [63:0] gb2 = rotr64_w(gb ^ gc2, 63);
+`ifndef SYNTHESIS
+  always @(posedge clk) begin
+    if (busy && phase && cnt == 0)
+      $display("DBG sub0: va=%h vb=%h vc=%h vd=%h mv0=%h mv1=%h m0i=%0d m1i=%0d ja=%0d jb=%0d jc=%0d jd=%0d ga=%h gd=%h gc=%h gb=%h ga2=%h gd2=%h gc2=%h gb2=%h",
+               va, vb, vc, vd, mv0, mv1, m0i, m1i, ja, jb, jc, jd, ga, gd, gc, gb, ga2, gd2, gc2, gb2);
+    if (busy && phase && cnt == 1)
+      $display("DBG sub1: ja=%0d jb=%0d jc=%0d jd=%0d m0i=%0d m1i=%0d va=%h vb=%h", ja, jb, jc, jd, m0i, m1i, va, vb);
+  end
+`endif
 
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
-      busy <= 1'b0; done <= 1'b0; phase <= 1'b0; cnt <= 7'd0;
+      busy <= 1'b0; done <= 1'b0; phase <= 1'b0; cnt <= 7'd0; do_xor <= 1'b0;
     end else begin
       done <= 1'b0;
       if (start && !busy) begin
@@ -118,10 +128,13 @@ module blake2b_f (
         v[jc] <= gc2;
         v[jd] <= gd2;
         if (cnt == 7'd95) begin
-          for (i = 0; i < 8; i = i + 1) dout[64 * i +: 64] <= v[i] ^ v[i + 8];
-          busy <= 1'b0; done <= 1'b1; phase <= 1'b0;
+          do_xor <= 1'b1; // sub-step 95's NBA lands this edge; XOR next cycle
         end else begin
           cnt <= cnt + 7'd1;
+        end
+        if (do_xor) begin
+          for (i = 0; i < 8; i = i + 1) dout[64 * i +: 64] <= hin[64 * i +: 64] ^ v[i] ^ v[i + 8];
+          done <= 1'b1; busy <= 1'b0; phase <= 1'b0; do_xor <= 1'b0;
         end
       end
     end
