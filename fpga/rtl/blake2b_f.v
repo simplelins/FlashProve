@@ -46,7 +46,8 @@ module blake2b_f (
     sel[1]  = 64'hEA489FD61C02B753;
     sel[2]  = 64'hB8C052FDAE367194;
     sel[3]  = 64'h7931DCBE265A40F8;
-    sel[4]  = 64'h905724FAE1BC683D;
+    sel[4]  = 64'h905724AFE1BC683D;  // sigma[4] = 9,0,5,7,2,4,10,15,... (FA here was a
+                                     // transposed nibble pair and failed every KAT vector)
     sel[5]  = 64'h2C6A0B834D75FE19;
     sel[6]  = 64'hC51FED4A0763928B;
     sel[7]  = 64'hDB7EC13950F4862A;
@@ -75,18 +76,21 @@ module blake2b_f (
   wire [3:0] rnd  = cnt[6:3];
   wire       diag = sub[2];
   wire [2:0] s4   = diag ? sub - 3'd4 : sub;
-  // position arithmetic in 5 bits, mod 16 = low 4 bits (a 3-bit sum would truncate:
-  // e.g. 4+5=9 wraps to 1 in 3 bits — the bug that showed as every-8th-word mismatches)
-  wire [4:0] ja5 = {2'b00, s4};
-  wire [4:0] jb5 = diag ? ({2'b00, s4} + 5)  : ({2'b00, s4} + 4);
-  wire [4:0] jc5 = diag ? ({2'b00, s4} + 10) : ({2'b00, s4} + 8);
-  wire [4:0] jd5 = diag ? ({2'b00, s4} + 15) : ({2'b00, s4} + 12);
-  wire [3:0] ja = ja5[3:0];
-  wire [3:0] jb = jb5[3:0];
-  wire [3:0] jc = jc5[3:0];
-  wire [3:0] jd = jd5[3:0];
-  wire [3:0] m0i = sig_at(rnd, 2 * s4);
-  wire [3:0] m1i = sig_at(rnd, 2 * s4 + 1);
+  // positions: columns are (k, k+4, k+8, k+12). Diagonals are the 4x4-matrix transpose:
+  // (k, 4+(k+1)%4, 8+(k+2)%4, 12+(k+3)%4), i.e. G4..G7 hit (0,5,10,15) (1,6,11,12) (2,7,8,13)
+  // (3,4,9,14). The b/c/d entries are NOT (k+5)/(k+10)/(k+15) mod 16: the natural mod-16 wraps
+  // send k=2,3 to 12,13 / 0,1,2 where the pattern needs 8,9 / 12,13,14 (that is what failed
+  // every KAT vector, together with the d wrap).
+  wire [1:0] k2   = s4[1:0];
+  wire [3:0] ja   = {1'b0, s4[1:0]};
+  wire [3:0] jb   = diag ? {2'b01, k2 + 2'd1} : ({1'b0, s4[1:0]} + 4'd4);
+  wire [3:0] jc   = diag ? {2'b10, k2 + 2'd2} : ({1'b0, s4[1:0]} + 4'd8);
+  wire [3:0] jd   = diag ? {2'b11, k2 + 2'd3} : ({1'b0, s4[1:0]} + 4'd12);
+  // message words use the FULL sub-step index: column G k (sub 0..3) takes sigma[2k],sigma[2k+1],
+  // diagonal G 4+k (sub 4..7) takes sigma[8+2k],sigma[9+2k] — i.e. sigma[2*sub],sigma[2*sub+1].
+  // (Indexing from s4 here fed sigma[0..7] to the diagonal half — the bug that failed all KATs.)
+  wire [3:0] m0i = sig_at(rnd, 2 * sub);
+  wire [3:0] m1i = sig_at(rnd, 2 * sub + 1);
 
   wire [63:0] va = v[ja], vb = v[jb], vc = v[jc], vd = v[jd];
   wire [63:0] mv0 = min[64 * m0i +: 64], mv1 = min[64 * m1i +: 64];
@@ -99,16 +103,6 @@ module blake2b_f (
   wire [63:0] gd2 = rotr64_w(gd ^ ga2, 16);
   wire [63:0] gc2 = gc + gd2;
   wire [63:0] gb2 = rotr64_w(gb ^ gc2, 63);
-`ifndef SYNTHESIS
-  always @(posedge clk) begin
-    if (busy && phase && cnt == 0)
-      $display("DBG sub0: va=%h vb=%h vc=%h vd=%h mv0=%h mv1=%h m0i=%0d m1i=%0d ja=%0d jb=%0d jc=%0d jd=%0d ga=%h gd=%h gc=%h gb=%h ga2=%h gd2=%h gc2=%h gb2=%h",
-               va, vb, vc, vd, mv0, mv1, m0i, m1i, ja, jb, jc, jd, ga, gd, gc, gb, ga2, gd2, gc2, gb2);
-    if (busy && phase && cnt == 1)
-      $display("DBG sub1: ja=%0d jb=%0d jc=%0d jd=%0d m0i=%0d m1i=%0d va=%h vb=%h", ja, jb, jc, jd, m0i, m1i, va, vb);
-  end
-`endif
-
   always @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       busy <= 1'b0; done <= 1'b0; phase <= 1'b0; cnt <= 7'd0; do_xor <= 1'b0;

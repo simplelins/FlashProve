@@ -8,12 +8,14 @@ module tb;
   reg [63:0] t_lo, t_hi;
   wire busy, done;
   wire [511:0] dout;
-  integer cycle = 0, vec = 0, good = 0, fh, code, i;
+  wire [511:0] dout_c;          // combinational reference, same inputs
+  integer cycle = 0, vec = 0, good = 0, good_c = 0, fh, code, i;
   reg [63:0] w [0:34];
   reg [1023:0] discard;
 
   blake2b_f dut (.clk(clk), .rst_n(rst_n), .start(start), .hin(hin), .min(min),
                  .t_lo(t_lo), .t_hi(t_hi), .last(last), .busy(busy), .done(done), .dout(dout));
+  blake2b_comb refc (.hin(hin), .min(min), .t_lo(t_lo), .t_hi(t_hi), .last(last), .dout(dout_c));
   always #5 clk = ~clk;
 
   initial begin
@@ -59,14 +61,17 @@ module tb;
                    dout[64 * i +: 64], w[27 + i]);
           good = good - 1;
         end
-`ifdef ROUND_DEBUG
-      if (vec == 0)
-        for (i = 0; i < 16; i = i + 1)
-          $display("RTL R%0d w%02d: %h", i < 8 ? 12 : i - 8, i % 8, dut.v[i]);
-`endif
+      good_c = good_c + 1;
+      for (i = 0; i < 8; i = i + 1)
+        if (dout_c[64 * i +: 64] !== w[27 + i]) begin
+          $display("COMB MISMATCH vec %0d word %0d: got %h want %h", vec, i,
+                   dout_c[64 * i +: 64], w[27 + i]);
+          good_c = good_c - 1;
+        end
     end
-    if (good == 512) $display("TB PASS: 512 of 512 vectors match blake2b_f.py");
-    else $display("TB FAIL: %0d of 512 passed", good);
+    if (good == 512 && good_c == 512)
+      $display("TB PASS: 512 of 512 vectors, iterative + combinational, match blake2b_f.py");
+    else $display("TB FAIL: iterative %0d/512, combinational %0d/512", good, good_c);
     $finish;
   end
 endmodule

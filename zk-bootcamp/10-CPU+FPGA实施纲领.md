@@ -27,6 +27,19 @@
   hash.h:454-464）；
 - **验收**：Verilator 仿真全过 → FPGA 机上板实测吞吐 → **目标：commit 哈希吞吐 ≥ 100 GB/s**
   （对照 GPU 实测 ~15 GB/s；39 min commit 的哈希主导段 → 压至 ~5 min）。
+- **✅ 进展（2026-11-12，WP1.1 压缩函数核完成）**：`fpga/rtl/blake2b_f.v`（迭代核，~98 周期/块）
+  + `fpga/rtl/blake2b_comb.v`（组合参考实现，always@(*) 循环式）双实现均 **512/512 KAT 通过**
+  （`fpga/vectors/f_kat.txt`，源自 verifier/tests/known_answers/blake2b_f.py 的 made_up()）。
+  三个真实 bug 与定位法（对后续 WP 的教训）：
+  1. **对角四元组不是 (k, k+5, k+10, k+15) mod 16**——正确是 4×4 矩阵转置
+     (k, 4+(k+1)%4, 8+(k+2)%4, 12+(k+3)%4)，即 (0,5,10,15)(1,6,11,12)(2,7,8,13)(3,4,9,14)；
+     自然 mod-16 回绕把 k=2,3 的 b/c 送错到 12,13/0,1,2（应为 8,9/12,13,14）；
+  2. **对角步的消息字索引用全步编号** sigma[2*sub]（sub=0..7），不是半段内编号 2*s4——
+     否则 G4–G7 读 sigma[0..7] 而非 sigma[8..15]；
+  3. **打包 sigma 常量一行错**：sel[4] 的 FA 应为 AF（σ[4][6]=10, σ[4][7]=15 被对调）。
+  定位法：组合参考实现先过 KAT（隔离 TB 接线）→ Python 逐步复刻 RTL + 挂钩 G 逐调用对拍
+  → 第一个分歧调用反推参数（暴力搜索 m 对/四元组/旋转组合，锁定 m=(15,10) 换位）。
+  剩余：树构建器（leaf/node/vertex tag 模式）+ Verilator lint + hash_vectors.txt 57 行对拍。
 
 ### 批次 B：Goldilocks 域 ALU + sumcheck 折叠单元
 - 域乘 p=2^64−2^32+1（约减只需 2^64≡2^32−1 的两次移位加）；E=X³−2 三字元素（K3）；
@@ -44,9 +57,9 @@
 
 ## 3. 本机即做清单（无需 FPGA 机）
 1. Verilator testbench 骨架（读 hash_vectors.txt 的 C++/Python 驱动）——**金标准已就位**；
-2. compress 的纯 Verilog（参照 blake2b_f.h 的 G 函数全展开，行号 75-184）；
+2. ~~compress 的纯 Verilog~~ **✅ 已完成**（blake2b_f.v + blake2b_comb.v，512/512 KAT，见批次 A）；
 3. `psc_layer_test` 17 case 转储为域 ALU 的 RTL 对拍向量；
-4. 目录：`fpga/`（RTL/tb/vectors/docs）建议放 `sm89-port` 分支或独立仓。
+4. 目录：`fpga/`（RTL/tb/vectors/docs）建议放 `sm89-port` 分支或独立仓。**✅ 已建**（fpga/rtl, tb, vectors, bench）。
 
 ## 4. ASIC 衔接（最终形态）
 - 批次 A/B/C 的 RTL 即 ASIC 的**微架构规格**（工艺无关）；
