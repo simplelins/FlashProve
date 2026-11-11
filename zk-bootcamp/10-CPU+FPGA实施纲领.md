@@ -39,12 +39,27 @@
   3. **打包 sigma 常量一行错**：sel[4] 的 FA 应为 AF（σ[4][6]=10, σ[4][7]=15 被对调）。
   定位法：组合参考实现先过 KAT（隔离 TB 接线）→ Python 逐步复刻 RTL + 挂钩 G 逐调用对拍
   → 第一个分歧调用反推参数（暴力搜索 m 对/四元组/旋转组合，锁定 m=(15,10) 换位）。
-  剩余：树构建器（leaf/node/vertex tag 模式）+ Verilator lint + hash_vectors.txt 57 行对拍。
+- **✅ 进展（2026-11-12，H 链引擎完成）**：`fpga/rtl/h_chain.v`——format 的 H/hp 引擎
+  （128B 块 F 链接：首态 IV⊕0x01010040；每块 t_lo = 4L（末块）否则 128(b+1)，hp 的顶点
+  索引 x 置入 t_lo 位 32–63；t_hi = {L, num}；末块 last 标志）。**44/44 通过
+  hash_vectors.txt 的 H 行**（含 L=70001＝2188 块链式 291k 周期、num=2³¹+3）。
+  两个新坑（记录在案）：① 块地址必须 b·2⁵ + rd[4:0]——rd 是 6 位（含装填排空值 32），
+  直接拼接会把排空值漏进地址，第 2 块起全部哈错；② Icarus 的 $sscanf 转换数上限 <16，
+  KAT 文件须转成逐 token 格式（fpga/vectors/hash_kat.txt，由 hash_vectors.txt 派生）。
+  TH 树哈希（th_chain.v，双区换位 + 10/11 双号分层）已就位，小向量 6/6，全量在跑。
 
 ### 批次 B：Goldilocks 域 ALU + sumcheck 折叠单元
 - 域乘 p=2^64−2^32+1（约减只需 2^64≡2^32−1 的两次移位加）；E=X³−2 三字元素（K3）；
 - sumcheck 折叠：eq 张量乘 + 求和（对照 `psc_layer_test` 的 17 case 作 RTL testbench）；
 - **验收**：与 CPU 逐值 bit-exact。
+- **✅ 进展（2026-11-12，域 ALU 完成）**：`fpga/rtl/gf_alu.v` 四模块全组合——
+  gf_add64/gf_sub64（一次条件减 p）、gf_mul64（核心恒等式：a·b = lo + h1·2⁹⁶ + h0·2⁶⁴
+  ≡ lo + (h0<<32) − h0 − h1 (mod p)，由 2⁶⁴≡2³²−1 与 2⁹⁶≡−1；一次 +p 抬升负值、
+  一次折叠 + 单次条件减 p 即归约完成，无需循环）、gf3_mul（9 个 gf_mul64 + 7 个 gf_add64
+  按 vf_common.h Ex 公式拼装）。**726/726 KAT 通过**（`fpga/vectors/gf_kat.txt`：边界
+  0/1/p−1/2³²/2⁶³ 双序 + 650 随机，期望值由纯 Python mod-p 与多项式 mod x³−2 生成，
+  语义与实现无关）。TB 用逐 token $fscanf（Icarus 的 $sscanf 转换数上限 <9；
+  $fgets 右对齐，行首字符在 [8*sc−1 −: 8]——两个仿真器坑记录在 TB 注释里）。
 
 ### 批次 C：查表森林引擎
 - packed 表（131 KB）常驻 BRAM/URAM（U55C HBM 备用）；直方图（count_keys16 语义）；
