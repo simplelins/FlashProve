@@ -47,6 +47,19 @@
   直接拼接会把排空值漏进地址，第 2 块起全部哈错；② Icarus 的 $sscanf 转换数上限 <16，
   KAT 文件须转成逐 token 格式（fpga/vectors/hash_kat.txt，由 hash_vectors.txt 派生）。
   TH 树哈希（th_chain.v，双区换位 + 10/11 双号分层）已就位，小向量 6/6，全量在跑。
+- **✅ 进展（2026-11-12 续，批次 A 哈希核全部完成）**：
+  - `th_chain.v` **13/13 TH 向量通过**（含 L=1000001：5 层树、4.47M 周期；128 字/片 10 号、
+    摘要层 11 号、双存储区逐级换位）；
+  - `str_hash.v` **58/58 mode_vectors.txt 全通过**——blocks/hash/hash.h 的通用串哈希引擎
+    （begin64 初态：IV⊕param0⊕Start 于 salt/person 槽；t_hi=0；末块 t_lo=total；
+    每块 16 个 64 位字），覆盖全部域：Merkle 叶（W 符号 + 40..64B 盐 + fill）、链标签、
+    顶点、2⁶³ 索引、2⁴⁸ 树号、32/64 字节摘要。**即 leaf/node/vertex 三种 tag 模式的核心
+    已就位**，剩顶点树控制器（two_digests 一拍压缩 + 树结构调度）为批次 A 收尾。
+  - 转换器三大教训（已写进 KAT 文件头）：mode_vectors 的 digest/start 是**字节串**，
+    须按小端装 u32（hash.h 的 d.w[i]）；mode 的 total 含 16 字节 label；
+    H/TH 的 digest 是 u32 状态字直打（两种约定不同！）。
+  - TB 教训：Icarus 的 @(*) 看不见函数内部读的信号（需显式敏感表）；$fscanf 不能以
+    part-select 为目标；64 字节摘要需 16 项期望数组。
 
 ### 批次 B：Goldilocks 域 ALU + sumcheck 折叠单元
 - 域乘 p=2^64−2^32+1（约减只需 2^64≡2^32−1 的两次移位加）；E=X³−2 三字元素（K3）；
@@ -88,6 +101,44 @@
 - **差分测试义务**：FPGA 证明 = "not the released programs"，一切以 cp_verify/Lean
   验证器接受为准；块级 bit-exact 先行；
 - **秘密纪律**：bring-up 走 `-public-weights`（maverick 路线），秘密模式最后。
+
+## 6. L2-alt 实测日志（2026-11-12，进行中）
+
+### 已走通的路径（scales/ 完整管线，全部在 48GB 4090 D 上）
+1. **make_model**（prover/tests/weights_blocks/）生成合成 GGUF：形状行
+   `L=48 H=40 G=8 f=16384 fe=8192 NE=32 V=202048 seed=2026`（≈106G 参数，61GB q8 类 GGUF，
+   与 Maverick 同为 0.5B/参数量级）。D=5120 与 DH=128 硬编码在 make_model 里；
+   参数界：layers 1–1023, H/G 2–510, f/fe 256–65280, NE 0–1023, V ≤ 2^24。
+2. **calibrate.py --device cuda**（Python 3.13 venv，requirements.txt 哈希锁定）：
+   3 窗口 × 64 token 秒级完成 → words.json（313 maxima）。
+3. **words_to_policy.py**：BASE policy 只需改形状行（NE/fe/L/V），转换器另搬 6 行 scales
+   （eps1_lo/eps2_lo/MF/KF/epsF_lo/s——注意 s 15→18：来自拟合，非 Maverick 常数）。
+4. **cp_verify -plan arrays（exit 4=接受）→ pack_layout.py（2565 行 F + 25 行 E）→
+   -plan accounting（PLAN ONLY）**——configuration digest `5a71a86a…`。
+
+### policy 形状的三个硬约束（血泪教训，各吃掉一轮 make_model+calibrate）
+1. **MoE 层要求 f = 2·fe 且 fe 为 2 的幂**（cp_verify.cpp:494 shape-words）——fe=4096 配
+   f=16384 直接被拒；
+2. **H 子证明调用形状下限**：`c.n = lJ + lt ≥ max(10, nminH, la=16)`（cp_verify.cpp:1807），
+   而 lJ 随层数 L 与 V 缩——L 12、V 32768 都让 R16a 跌破下限。**结论：L 与 V 不可缩**
+   （保持 48/202048），可缩的只有 fe/NE（专家维度）；
+3. **table 行是容量不是精确值**（"makes room for the pads"）——保留全尺寸 table 行合法，
+   commit 显存 ≈ 0.23×26GB（权重缓冲随参数缩）+ 22.3GB（表结构不变）≈ 28GB ✓ 48GB 卡可容。
+   代价：commit 哈希段不随模型缩小（仍 ~39min 量级）。
+
+### 环境重建（原 flashprove-exp 已删）
+- CUDA 13.2.86：pip `cuda-toolkit[nvcc,cublas,cccl,crt,nvvm,cudart]==13.2.2` →
+  `$HOME/cuda-13.2.86/nvidia/cu13/bin`（build.md 的 8 行法，TUNA 源）；
+- g++13：`$HOME/gcc13bin` 符号链接（conda-forge 13.4.0），cp_verify 的 libstdc++ 经
+  rpath 自解析（ldd 无 not found）✓；
+- prover sm_89 构建：`FP_ARCH=sm_89 OUT=$W/build-hc prover/build.sh` ✓ exit 0；
+- Python 3.13.13：`$HOME/usr/miniconda3/bin/python3.13`（现成）。
+
+### 阻塞与看门狗
+ComfyUI（PID 1942526）占 GPU 27.5GB——cp_commit 拒绝 >2GB 占用。已挂看门狗：
+GPU 空闲（<2GB）即自动启动 `cp_commit -weights model -config config -M 1
+-ivk ivk -isk isk -worst-case-table table.txt`，日志在 scales-mid/commit.log。
+预期：worst-case FP64 检查 ~50min（3.78h × 0.23）+ 各阶段 ≈ 1.5–2.5h。
 
 ---
 *2026-11-07 · 前置：09 号移植报告（全链路 YES）；金标准与探针在 `zk-bootcamp/probes/`。*
