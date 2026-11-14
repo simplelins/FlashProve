@@ -142,3 +142,40 @@ GPU 空闲（<2GB）即自动启动 `cp_commit -weights model -config config -M 
 
 ---
 *2026-11-07 · 前置：09 号移植报告（全链路 YES）；金标准与探针在 `zk-bootcamp/probes/`。*
+
+
+## 7. L2-alt 达成（2026-11-15 04:00，全链路 YES）
+
+**commitment ID `8d20b21ba0c806573a19125b30f5452c330e7f216d209141e0605bf7f0a3b9f3`** ——
+RTX 4090 D 48GB（sm_89 移植版程序）上，scales/ 真实管线（校准 + 最坏情形检查 + e_res 10）
+对一个 Llama-4 架构 MoE 模型（**L=24, d=5120, H=40, G=8, f=16384, fe=8192, NE=32,
+V=202048 ≈ 53G 参数**，合成权重）完成 **cp_commit → cp_prove → cp_verify 全链路 YES**：
+
+- `result-v1 status=0 bits=128 policy=exact-match record=1`；proof 10.5 MB，key.bin 2.1 MB；
+- 覆盖：next-token 判定（r=1023, e=1024, T=1024），covered: y=yes；
+- proof of work：32 bits 计入 59 轮，least round 128.00 bits（无 PoW 96.23 bits）；
+- 时间：commit 75 分钟（worst-case FP64 检查 ~30 分钟——3.78h 全尺寸 × 23% 参数 × 折叠修正，
+  实测与预测一致）、prove ~13 分钟、verify CPU 分钟级。
+
+### 通往 YES 的四堵墙（每堵墙的根因与处置，按发现顺序）
+1. **status 7（scales 过紧）**：worst_case.py 加粗 scales + **e_res 11→10**，wsums/fold 以
+   新 eres 重做（weight_sums 不覆写 → 新文件夹 mv GGUF）。附带的坑：
+   **worst_case.py 的 emb_bits 预测偏乐观 1 位**（预测 10，实测 12）——以 sums 文件的实测列
+   为准修正 words.json；
+2. **key-file 阶段 -gpu-memory 墙**：`HF_ONCE_ENGINE_ROOM = 24 GiB`（H100 编译期常数）+
+   2 GiB 驱动预留 → slab 只许 16.2GB < 需求 18.55GB。处置：引擎 24→**23 GiB** +
+   驱动预留 2→**1 GiB**（两个硬件适配常数，不改任何输出字节）+ `-piece-bytes 128MB`
+   释放权重阶段残留——key-file 通过；
+3. **entry 阶段墙（真正的死墙）**：entry 的折叠行**按设计是 key 的 2 倍**（hf_commit_once.cuh
+   `for_tables = 2 * lent_bytes(...)`）→ 需求 30.65GB > 任何引擎预留组合。**折叠行 =
+   27 × ell（与模型大小无关，纯 table 行驱动）**——106G 参数模型在 ell=402.6M 下无解；
+4. **最终解**：模型减半（L=48→24）+ **table ell 402.6M→2^27（1.21× fi0 下限）**——
+   entry 需求降到 ~18GB，一次通过。
+
+### 对 L3/L4 的推论
+- **48GB 卡的可承载规模**：该 table 行（2^27，fi0 的 1.21 倍）下 entry 墙在 ~30G 参数量级；
+  更大的模型需要更大的 ell → entry 需求线性上升 → **50G+ 参数的 commit 需要 64GB+ 显存**；
+- L3（真实 Maverick 4-bit，464G 参数）在此卡上不可行（full-size 需要 80GB H100，与移植
+  报告结论一致），但 **scales 管线的每个 CPU 步骤已全部验证可用**，上 H100 即走；
+- 脚本资产：scales-mid/{l2alt-round2.sh, round24.sh, round24-2.sh, round24-3.sh}——
+  含 status-7 自动重试、e_res 变更自动 wsums 重做、emb_bits 实测修正的完整自动化。
