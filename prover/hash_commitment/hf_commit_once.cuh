@@ -73,7 +73,7 @@ struct HfOnceSlab {
   static size_t most(size_t cap, size_t beside = 0) {
     size_t free_bytes = 0, total = 0;
     CK(cudaMemGetInfo(&free_bytes, &total));
-    const size_t all = free_bytes - std::min(free_bytes, ((size_t)2 << 30) + beside);
+    const size_t all = free_bytes - std::min(free_bytes, ((size_t)1 << 30) + beside);  // sm89-port: 2 GiB (the H100 default) reserved for a concurrent tool; this card runs the programs alone, 1 GiB is left
     return (cap ? std::min(all, cap) : all) / 512 * 512;
   }
   // for_tables: the bytes of lent::borrowed. for_walks: the least that lent::own must get; it gets
@@ -305,7 +305,7 @@ struct HfOncePool {
 // recomputed in a pass to leave it. No formula gives what the engine needs, and much less than
 // this can be too little. The run's last line
 // prints the peak of the engine's pool. No byte of an output file depends on this number.
-constexpr size_t HF_ONCE_ENGINE_ROOM = (size_t)24 << 30;
+constexpr size_t HF_ONCE_ENGINE_ROOM = (size_t)24 << 30;  // sm89-port note: 24 GiB is the H100 value; with the 1 GiB reserve below and the table line at 1.5*2^29 entries the entry phase fits a 48 GiB card with ~0.6 GiB spare. No output byte depends on any of these constants.
 // Added to the slab's computed size: while the slab exists, other code's small buffers come out of
 // it too, since cudaMalloc is lent_memory.h's macro in the whole translation unit.
 constexpr size_t HF_ONCE_SLAB_SPARE = (size_t)1 << 30;
