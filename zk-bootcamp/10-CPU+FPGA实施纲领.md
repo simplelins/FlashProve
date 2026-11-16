@@ -179,3 +179,58 @@ V=202048 ≈ 53G 参数**，合成权重）完成 **cp_commit → cp_prove → c
   报告结论一致），但 **scales 管线的每个 CPU 步骤已全部验证可用**，上 H100 即走；
 - 脚本资产：scales-mid/{l2alt-round2.sh, round24.sh, round24-2.sh, round24-3.sh}——
   含 status-7 自动重试、e_res 变更自动 wsums 重做、emb_bits 实测修正的完整自动化。
+
+
+## 8. 批次服务实测（2026-11-17 00:40，24/24 全 PASS）
+
+commitment `8d20b21b…` 上的**批次服务首次实测**（一次 `-in/-out` 调用 = 一个批次）：
+
+| 指标 | 实测 |
+|---|---|
+| 批次规模 | 24 请求（各 1024-token 不同窗口，覆盖 y）|
+| **cp_prove 耗时** | **505 s（8.4 分钟）**——单请求独立跑 ~13 分钟；权重遍历被 24 请求摊销，**边际成本 ~21 s/请求** |
+| 出证 | 24 证明 + 24 回答，0 failed |
+| 验证 | **24 PASS / 0 FAIL**（逐一 cp_verify，CPU） |
+| 磨损 | count.bin 90→136 字节（**+46 精确**，与容量公式吻合）|
+| 叶容量 | 957,394 批（= r 44,040,191 ÷ 46 列/批），已用 2，余 957,392 |
+
+**服务经济学结论**：权重遍历是固定成本，批内请求的边际成本极低——批次越大单证越便宜（上限 = slots 64）。磨损率 46 列/批 → 该承诺可服务 95.7 万批 ≈ 2300 万请求（按每批 24）。
+
+**运维坑（程序的安全规则，按其指名方式处置）**：
+1. `cp-isk`：isk（密钥）的祖先链必须"仅本人可写"——仓库目录组可写 → 程序拒绝；按其指名 `chmod go-w` 修复；
+2. `cp-weights`：**isk.txt 的 weights 行记录 commit 时的权重路径**——移动权重目录后必须更新该行（操作员状态文件，非源码）；
+3. `make_request.py` 吃**裸 32 位小端字文件**，不是 .npy（有 128 字节头会被当作 token 拒绝）。
+
+
+## 9. ⑥ 整数模型服务 + 多 token 覆盖证明（2026-11-17 03:15，YES）
+
+**第二个承诺 `63028a500e616dae7c7ad5cc08a93b846d2076f4c3bf46a80d5772d75652a8b5`**
+（small_file 形状：L=4, d=5120, NE=16, V=2048, T=256；commit 仅 **29 秒**）上的完整服务闭环：
+
+1. **vLLM 0.29.0 + integer_model 插件**服务该模型（GGUF 权重直读，greedy）；
+2. prompt `[17,400,3]` → 整数模型贪心回复 **`[1500,1363,1832,600]`**（4 token）；
+3. 组 own_choices 式请求（r=2, e=6，**覆盖全部 4 个回复 token**）；
+4. cp_prove → cp_verify：**YES**，`covered: positions=2..5 tokens=3..6 policy=exact-match`。
+
+**排障账本（每条都是工具链的坑）**：
+- serve.sh 的 make_model 参数 H=2 与硬编码 D=5120 矛盾（H×dh≠d）→ 生成的 policy 被
+  `shape-heads` 拒——**自洽形状（H×dh=d）的模型 + 自备 reference 五件套**才可承诺；
+- flashinfer JIT（vLLM 采样算子）需要 **curand 头**（pip CUDA 13.2.86 缺）→ 从系统
+  cuda-13.3 拷 curand*.h（纯头文件，无版本冲突）；
+- flashinfer 的 ninja 硬编码 `-L lib64`（pip 工具链只有 lib/）→ `ln -s lib lib64`；
+- vLLM 引擎启动需 **ninja**（venv pip 装）+ VLLM_API_KEY + reference 五件套
+  （integer_model.json/policy/KL/wsums/fold）齐备；
+- pytest 980 通过（2 失败 13 错误全是服务类测试缺 ninja 所致，修复后 2/2 过）。
+
+**意义**：served 回复的多 token 覆盖证明打通——provider 用 vLLM 服务、FlashProve 证明
+整数模型贪心回复的完整形态在 48GB 卡上闭环（本轮 commit 29 秒、prove ~5 分钟）。
+
+
+## 10. ④ ncu 剖析：被程序的反注入设计阻断（2026-11-17，结论）
+
+`cp_prove`/`cp_commit` 的自重启卫生机制（closed_front.h:121 `no-fresh-start`）：二次启动的
+环境必须**严格缩减**——ncu 注入的剖析变量使二次启动看到更多环境项 → 程序按设计拒绝。
+**外部 profiler 剖析 commit/prove 被安全设计阻断**（防篡改 дисципline 的一部分）。
+
+替代的量化路径（已具备）：M-a/M-b 微基准 + 相位计时 + 20× 差距分析（§2）；
+更深的内核级数字需要仓库自带的剖析设施或 CUDA Graph 内嵌计时——留作与上游沟通的项。
