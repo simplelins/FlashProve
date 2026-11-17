@@ -255,3 +255,18 @@ blocks/iop 权威实现生成）——**TB PASS，4 轮 + 终值全部 bit-exact
 
 至此批次 B 的三个原子（gf_alu 726/726 + hp_form 40/40 + fold_round 4/4 全轮）全部 bit-exact，
 FPGA 路径覆盖 FOLD（承诺表的批量 sumcheck）的完整轮次计算。
+
+
+## 12. 批次 C 环境就绪：森林查表的 10 组 KAT 已在 4090 上生成（2026-11-18）
+
+- **forest_lookup_test**（sm_89 构建，4090）：**10 of 10 groups run and written**——
+  10 组合成密钥的查找证明，各组文件 lookup_<i>.bin + .bin.values + lookup_groups.txt
+  （0.3–17.6 MB/组，共 ~333 MB，在 l2alt/forest-groups/）；
+- **forest_lookup_check.f2**（CPU checker，psc_rows.sh 构建）：**10 of 10 groups passed**——
+  这批文件就是批次 C RTL 的对拍金标准（checker 的读取逻辑 = 语义规范，
+  verifier/src/vf_lookup_argument.h + forest 表的树结构）；
+- 测试的十组覆盖：小/大 slots、多 call、全 padding、PACKED 分类（sm_89 补丁改的那类）、
+  恶意 prover 三式（key/multiplicity/crossed——checker 必须拒）；
+- **RTL 设计的已知边界**：组内含 FS 哈希链（blocks/chain/chain.h）与折叠树——RTL 需要分
+  层实现（树节点哈希批处理 + 直方图 + 折叠轮次），与批次 A 的 th_chain/merkle_builder
+  同构可复用。
