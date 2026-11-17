@@ -257,6 +257,14 @@ blocks/iop 权威实现生成）——**TB PASS，4 轮 + 终值全部 bit-exact
 FPGA 路径覆盖 FOLD（承诺表的批量 sumcheck）的完整轮次计算。
 
 
+## 12.5 批次 C 第一个原子：MLE 求值引擎 bit-exact（2026-11-18）
+
+`fpga/rtl/mle_eval_comb.v` + KAT（纯 Python 生成）——**2^3/2^4/2^6 三种表全对**：
+Multilinear Extension 求值（checker 的 topFirst 语义：z[0] 在最高位；每轮
+`a[x] += z_r*(a[x+half]−a[x])`）——协议里所有 sumcheck/fold/乘积树论证的通用工作马。
+E = x³−2 的算术内联（hp_form_comb 同款）。Icarus 新坑：端口名 `z` 与高阻字面量冲突、
+`table` 是保留字（UDP 构造）——改名 tbl/zp。
+
 ## 12. 批次 C 环境就绪：森林查表的 10 组 KAT 已在 4090 上生成（2026-11-18）
 
 - **forest_lookup_test**（sm_89 构建，4090）：**10 of 10 groups run and written**——
