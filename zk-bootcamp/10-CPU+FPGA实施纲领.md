@@ -234,3 +234,24 @@ commitment `8d20b21b…` 上的**批次服务首次实测**（一次 `-in/-out` 
 
 替代的量化路径（已具备）：M-a/M-b 微基准 + 相位计时 + 20× 差距分析（§2）；
 更深的内核级数字需要仓库自带的剖析设施或 CUDA Graph 内嵌计时——留作与上游沟通的项。
+
+
+## 11. 批次 B 完成：FOLD 轮次引擎 bit-exact（2026-11-17）
+
+`fpga/rtl/fold_round_comb.v` + `fpga/tb/tb_fold_round.v` + KAT（`gen_fold_kat.cpp` 直连
+blocks/iop 权威实现生成）——**TB PASS，4 轮 + 终值全部 bit-exact**。
+
+覆盖的语义（blocks/iop/fold_rounds.h FoldProverRounds + fold_algebra.h + hp.h）：
+- **交错折叠**：`v'[i] = v[2i] + g·(v[2i+1] − v[2i])`（列主布局：entry c of row b at b + 2^a·c；
+  相邻 flat 对 = 同列的行 2b, 2b+1）；
+- **pair_products**：q(X) = ⟨a@X, m@X⟩ 的三个系数（每行对 a0·m0 + a0·m1 + a1·m0 + a1·m1）；
+- **plain 权重的 moments = (2, 1, 1)**：phi(X⁰) = 0⁰ + 1⁰ = **2**（不是 1！）——after 递归里
+  of_one() = 2 乘在后项上；phi(w_j) = 2·w_{j,0} + w_{j,1} + w_{j,2}，且**非末变量的 w_{j,0} = 0**
+  （hp_place 无 t=0 槽）——wd 索引按变量分支；
+- **end() 的缩放只乘 e.d**：e.mu = 未乘 eps·later 的原始折叠 mu（fold_rounds.h 的
+  `for (K &x : e.d) x = x * s;`——曾误读为乘 e.mu）；
+- **HidingPolynomial 的 round/bind**：q = w_i + before·psi_i + after_i；
+  before = before·psi_i(g) + w_i(g)（非末变量 w_{j,0} = 0）。
+
+至此批次 B 的三个原子（gf_alu 726/726 + hp_form 40/40 + fold_round 4/4 全轮）全部 bit-exact，
+FPGA 路径覆盖 FOLD（承诺表的批量 sumcheck）的完整轮次计算。
